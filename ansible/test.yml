@@ -1,0 +1,114 @@
+---
+- hosts: testmachines
+  become: yes
+  gather_facts: no
+
+  tasks:
+  - name: update aptcache
+    apt:
+        update_cache: yes
+
+  - name: install list of packages
+    apt: 
+        name: "{{ packages }}"
+        vars:
+          packages:
+          - python
+          - python-pip
+          - python-setuptools
+          - python-psycopg2
+          - python-flup
+          - postgresql
+          - spawn-fcgi
+          - libpq-dev
+          - nginx
+        state: present
+
+  - name: create testsite1
+    raw: mkdir -p /var/www/testsite1
+
+  - name: create dynamic
+    raw: mkdir -p /var/www/testsite1/dynamic
+    
+  - name: create static
+    raw: mkdir -p /var/www/testsite1/static
+
+  - name: setup nginx conf
+    copy:
+        src: /home/ubuntu/task/testtask/nginx/nginx.conf
+        dest: /etc/nginx/nginx.conf
+    notify: restart nginx
+    
+  - name: setup index
+    copy:
+        src: /home/ubuntu/task/testtask/www/testsite1/html/index.html
+        dest: /var/www/html/index.html
+        mode: 0755
+
+  - name: setup dynamic
+    copy:
+        src: /home/ubuntu/task/testtask/www/testsite1/dynamic/dynamic.py
+        dest: /var/www/testsite1/dynamic/dynamic.py
+        mode: 0755
+        
+  - name: setup static
+    copy:
+        src: /home/ubuntu/task/testtask/www/testsite1/static/index.html
+        dest: /var/www/testsite1/static/index.html
+        mode: 0755
+
+  - name: install python-utils
+    pip:
+      name: python-utils
+
+  - name: install web.py
+    pip:
+      name: web.py
+
+  - name: setup fcgi
+    copy:
+        src: /home/ubuntu/task/testtask/init/spawnfcgi
+        dest: /etc/init.d/spawnfcgi
+        mode: 0755
+        
+  - name: fcgi autorun
+    raw: update-rc.d spawnfcgi defaults
+
+
+  handlers:
+  - name: restart nginx
+    service: name=nginx state=started
+  
+
+- hosts: testmachines
+  become: yes
+  become_user: postgres
+  gather_facts: no
+
+  vars:
+    dbname: testdb
+    dbuser: testuser
+    dbpassword: someezpasswd
+
+
+
+  tasks:
+  - name: ensure database is created
+    postgresql_db: name={{dbname}}
+
+  - name: ensure user has access to database
+    postgresql_user: db={{dbname}} name={{dbuser}} password={{dbpassword}} priv=ALL
+
+  - name: ensure user does not have unnecessary privilege
+    postgresql_user: name={{dbuser}} role_attr_flags=NOSUPERUSER,NOCREATEDB
+  
+  - name: ensure no other user can access the database
+    postgresql_privs: db={{dbname}} role=PUBLIC type=database priv=ALL state=absent
+
+- hosts: testmachines
+  become: yes
+  gather_facts: no
+  
+  tasks:
+  - name: reboot
+    command: /sbin/reboot
